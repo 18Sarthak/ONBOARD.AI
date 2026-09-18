@@ -7,6 +7,8 @@ import cors from 'cors';
 import { initCheckpointer } from './graph/graph';
 import { startCronSweep } from './cron/sweep';
 import { getPrisma } from './db/prismaClient';
+import { embed } from './rag/embed';
+
 
 import requestsRouter from './routes/requests';
 import approvalsRouter from './routes/approvals';
@@ -71,6 +73,13 @@ async function bootstrap(): Promise<void> {
   // This MUST complete before any DB operations (the proxy throws if called before init).
   await getPrisma();
   console.log('✓ PostgreSQL connection established via Neon WebSocket.');
+
+  // Warm up the Xenova embedding model at startup.
+  // Without this, the first request pays a ~90MB model-download + load cost (~2 min).
+  // By preloading here, all requests get fast embeddings from the in-memory pipeline.
+  console.log('⏳ Warming up embedding model (this takes ~30s on first run)…');
+  await embed('warmup');
+  console.log('✓ Embedding model ready.');
 
   // Initialise the LangGraph PostgresSaver checkpointer.
   // This creates the checkpointer tables if they don't exist.

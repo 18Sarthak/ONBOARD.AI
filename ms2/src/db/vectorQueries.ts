@@ -1,18 +1,4 @@
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import ws from 'ws';
-
-neonConfig.webSocketConstructor = ws;
-
-// Reuse a single pool for all vector queries — initialised lazily on first call.
-let _pool: Pool | null = null;
-function getPool(): Pool {
-  if (!_pool) {
-    const connectionString = process.env.DATABASE_URL;
-    if (!connectionString) throw new Error('DATABASE_URL is not set');
-    _pool = new Pool({ connectionString });
-  }
-  return _pool;
-}
+import { prisma } from './prismaClient';
 
 export interface PolicyChunkResult {
   id: string;
@@ -24,8 +10,8 @@ export interface PolicyChunkResult {
 /**
  * Runs a pgvector cosine similarity search against the PolicyChunk table.
  *
- * Uses the `<=>` operator (cosine distance) so results are ordered from
- * most similar (distance ≈ 0) to least similar (distance ≈ 2).
+ * Uses Prisma $queryRaw with the `<=>` cosine distance operator.
+ * Reuses the existing Prisma TCP connection — no second WebSocket pool needed.
  *
  * @param embedding  384-dimensional float array produced by all-MiniLM-L6-v2
  * @param limit      Maximum number of chunks to return (default 5)
@@ -34,10 +20,10 @@ export async function similaritySearch(
   embedding: number[],
   limit = 5
 ): Promise<PolicyChunkResult[]> {
-  const pool = getPool();
   const vectorLiteral = `[${embedding.join(',')}]`;
 
-  const result = await pool.query<PolicyChunkResult>(
+  // Prisma $queryRaw returns plain rows; cast to our interface.
+  const rows = await prisma.$queryRawUnsafe<PolicyChunkResult[]>(
     `SELECT
       id,
       content,
@@ -47,9 +33,10 @@ export async function similaritySearch(
     WHERE embedding IS NOT NULL
     ORDER BY embedding <=> $1::vector
     LIMIT $2`,
-    [vectorLiteral, limit]
+    vectorLiteral,
+    limit
   );
 
-  return result.rows;
+  return rows;
 }
 
