@@ -1,0 +1,85 @@
+// This file is intentionally minimal — Prisma cannot generate vector(384) columns natively.
+// The embedding column is added by prisma/applyVectorMigration.ts after Prisma migrations run.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [vector]
+}
+
+enum RequestStatus {
+  draft
+  pending_info
+  pending_approval
+  approved
+  escalated
+  done
+}
+
+enum ApprovalDecision {
+  pending
+  approved
+  rejected
+}
+
+// Policy document chunks for RAG.
+// NOTE: The `embedding` column (vector(384)) is NOT defined here because Prisma
+// has no native pgvector type. It is added via prisma/applyVectorMigration.ts
+// which runs CREATE EXTENSION IF NOT EXISTS vector and ALTER TABLE to add the column.
+model PolicyChunk {
+  id        String   @id @default(uuid())
+  content   String
+  sourceDoc String
+  createdAt DateTime @default(now())
+
+  // embedding vector(384) — added by raw SQL migration (see prisma/applyVectorMigration.ts)
+}
+
+// An HR workflow request submitted by an employee.
+model Request {
+  id           String        @id @default(uuid())
+  employeeName String
+  type         String        @default("general")
+  details      Json          @default("{}")
+  status       RequestStatus @default(draft)
+  department   String        @default("")
+  // graphState stores the serialized LangGraph state for fallback resumption
+  // in the unlikely event the PostgresSaver checkpointer tables are unavailable.
+  graphState   Json?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  approvals AgentApproval[]
+  logs      AgentLog[]
+}
+
+// Human approval record for a request.
+model AgentApproval {
+  id           String           @id @default(uuid())
+  requestId    String
+  approverRole String
+  decision     ApprovalDecision @default(pending)
+  decidedAt    DateTime?
+  reason       String?
+
+  request Request @relation(fields: [requestId], references: [id])
+}
+
+// One log entry per graph node execution — the primary observable of agent behavior.
+model AgentLog {
+  id         String   @id @default(uuid())
+  requestId  String?  // nullable: sweep-level logs may not belong to a specific request
+  timestamp  DateTime @default(now())
+  nodeName   String
+  toolCalled String?
+  reasoning  String
+  result     Json
+
+  request Request? @relation(fields: [requestId], references: [id])
+}
