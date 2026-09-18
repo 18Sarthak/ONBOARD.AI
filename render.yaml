@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: onboardflow-ai-backend
+    env: node
+    region: oregon
+    rootDir: ms2
+    buildCommand: npm install && npm run prisma:generate && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ALLOWED_ORIGIN
+        sync: false
+      - key: SLA_MINUTES
+        value: 2
+      - key: PORT
+        value: 4000
+      - key: LANGCHAIN_TRACING_V2
+        value: false
