@@ -36,7 +36,7 @@ app.use(express.json({ limit: '1mb' }));
 // ---------------------------------------------------------------------------
 // Health check — doesn't require DB, responds immediately
 // ---------------------------------------------------------------------------
-app.get('/health', (_req, res) => {
+app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
