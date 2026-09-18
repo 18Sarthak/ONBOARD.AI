@@ -1,14 +1,20 @@
 /**
  * src/db/prismaClient.ts
  *
- * Standard Prisma Client using direct TCP connection to Neon PostgreSQL.
- * No WebSocket adapter needed — the DATABASE_URL points to the direct (non-pooler)
- * endpoint which is reachable via standard TCP port 5432.
+ * Prisma Client using Neon's serverless WebSocket adapter.
+ * This bypasses direct TCP/TLS negotiation (which causes P1011 OpenSSL errors
+ * on platforms like Render) by routing queries through Neon's WebSocket proxy.
  *
  * Singleton pattern: getPrisma() initialises once at server startup.
  * All modules import the `prisma` proxy which throws if called before bootstrap().
  */
 import { PrismaClient } from '@prisma/client';
+import { PrismaNeon } from '@prisma/adapter-neon';
+import { neonConfig } from '@neondatabase/serverless';
+import ws from 'ws';
+
+// Use the ws package as the WebSocket implementation in Node.js environments.
+neonConfig.webSocketConstructor = ws;
 
 let _client: PrismaClient | null = null;
 
@@ -19,11 +25,16 @@ let _client: PrismaClient | null = null;
 export async function getPrisma(): Promise<PrismaClient> {
   if (_client) return _client;
 
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error('[prisma] DATABASE_URL environment variable is not set.');
+  }
+
+  const adapter = new PrismaNeon({ connectionString });
+
   _client = new PrismaClient({
+    adapter,
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
-    datasources: {
-      db: { url: process.env.DATABASE_URL },
-    },
   });
 
   // Test the connection eagerly
